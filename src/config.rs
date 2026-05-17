@@ -870,7 +870,7 @@ url = ""
 id = ""
 token = ""
 psk = ""
-enabled = true
+enabled = false
 
 [launch]
 tag = ""
@@ -896,7 +896,7 @@ args = ""
 
 [preferences]
 timeout = 86400
-auto_approve = true
+auto_approve = false
 name_export = ""
 "#;
     toml::Value::Table(toml_str.parse::<toml::Table>().unwrap())

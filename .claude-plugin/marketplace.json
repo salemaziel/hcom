@@ -15,7 +15,7 @@
       "source": "./plugin/hcom",
       "description": "Let AI agents message, watch, and spawn each other across terminals. Claude Code, Gemini CLI, Codex, OpenCode.",
       "category": "productivity",
-      "homepage": "https://github.com/aannoo/hcom"
+      "homepage": "https://github.com/salemaziel/hcom"
     }
   ]
 }

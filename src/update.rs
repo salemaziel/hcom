@@ -28,38 +28,41 @@ fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
 
 /// Spawn a detached background process to fetch latest version and write the cache file.
 /// Returns immediately — result shows up on next command.
+///
+/// # Security note
+/// `flag` and `current` are passed as environment variables (`HCOM_UPDATE_FLAG` and
+/// `HCOM_UPDATE_CURRENT`) so that shell metacharacters in either value (e.g. a
+/// user-controlled `HCOM_DIR`) cannot be injected into the shell script.
 fn spawn_background_check(flag: &Path, current: &str) {
-    let flag_str = flag.to_string_lossy().to_string();
-    let current = current.to_string();
-
     // Shell script: uses git ls-remote (no rate limits) to get latest tag, compares, writes cache.
     // Runs completely detached — parent doesn't wait.
-    let script = format!(
-        r#"
-TAG=$(GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 git ls-remote --tags --sort=version:refname https://github.com/aannoo/hcom.git 2>/dev/null | grep -v '\^{{}}' | tail -1 | sed 's|.*refs/tags/||')
+    // Flag path and current version are supplied via env vars to avoid shell injection.
+    let script = r#"
+TAG=$(GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 git ls-remote --tags --sort=version:refname https://github.com/salemaziel/hcom.git 2>/dev/null | grep -v '\^{}' | tail -1 | sed 's|.*refs/tags/||')
 # Fallback to GitHub API if git unavailable
 if [ -z "$TAG" ]; then
-    TAG=$(curl -fsSL --max-time 5 https://api.github.com/repos/aannoo/hcom/releases/latest 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+    TAG=$(curl -fsSL --max-time 5 https://api.github.com/repos/salemaziel/hcom/releases/latest 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
 fi
-VER="${{TAG#v}}"
+VER="${TAG#v}"
 if [ -n "$VER" ]; then
     # Compare: if remote > current, write version; else write empty
-    REMOTE=$(echo "$VER" | awk -F. '{{printf "%d%06d%06d", $1, $2, $3}}')
-    LOCAL=$(echo "{current}" | awk -F. '{{printf "%d%06d%06d", $1, $2, $3}}')
+    REMOTE=$(echo "$VER" | awk -F. '{printf "%d%06d%06d", $1, $2, $3}')
+    LOCAL=$(echo "$HCOM_UPDATE_CURRENT" | awk -F. '{printf "%d%06d%06d", $1, $2, $3}')
     if [ "$REMOTE" -gt "$LOCAL" ] 2>/dev/null; then
-        printf '%s' "$VER" > "{flag_str}"
+        printf '%s' "$VER" > "$HCOM_UPDATE_FLAG"
     else
-        printf '' > "{flag_str}"
+        printf '' > "$HCOM_UPDATE_FLAG"
     fi
 else
-    printf '' > "{flag_str}"
+    printf '' > "$HCOM_UPDATE_FLAG"
 fi
-"#
-    );
+"#;
 
     // Fire and forget — detach from parent process
     let _ = std::process::Command::new("sh")
-        .args(["-c", &script])
+        .args(["-c", script])
+        .env("HCOM_UPDATE_FLAG", flag)
+        .env("HCOM_UPDATE_CURRENT", current)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -78,7 +81,7 @@ fn fetch_via_git() -> Option<String> {
             "ls-remote",
             "--tags",
             "--sort=version:refname",
-            "https://github.com/aannoo/hcom.git",
+            "https://github.com/salemaziel/hcom.git",
         ])
         .env("GIT_HTTP_LOW_SPEED_LIMIT", "1000")
         .env("GIT_HTTP_LOW_SPEED_TIME", "5")
@@ -108,7 +111,7 @@ fn fetch_via_curl() -> Option<String> {
             "-fsSL",
             "--max-time",
             "5",
-            "https://api.github.com/repos/aannoo/hcom/releases/latest",
+            "https://api.github.com/repos/salemaziel/hcom/releases/latest",
         ])
         .output()
         .ok()?;
@@ -164,7 +167,7 @@ fn get_update_cmd() -> &'static str {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(_) => {
-            return "curl -fsSL https://github.com/aannoo/hcom/releases/latest/download/hcom-installer.sh | sh";
+            return "curl -fsSL https://github.com/salemaziel/hcom/releases/latest/download/hcom-installer.sh | sh";
         }
     };
 
@@ -197,7 +200,7 @@ fn get_update_cmd() -> &'static str {
     }
 
     // Default: curl installer
-    "curl -fsSL https://github.com/aannoo/hcom/releases/latest/download/hcom-installer.sh | sh"
+    "curl -fsSL https://github.com/salemaziel/hcom/releases/latest/download/hcom-installer.sh | sh"
 }
 
 fn is_user_site_pip_install(exe: &Path) -> bool {

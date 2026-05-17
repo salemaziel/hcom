@@ -1,8 +1,8 @@
 # hcom
 
-[![CI](https://github.com/aannoo/hcom/actions/workflows/ci.yml/badge.svg)](https://github.com/aannoo/hcom/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/aannoo/hcom)](https://github.com/aannoo/hcom/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/aannoo/hcom/blob/main/LICENSE)
+[![CI](https://github.com/salemaziel/hcom/actions/workflows/ci.yml/badge.svg)](https://github.com/salemaziel/hcom/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/salemaziel/hcom)](https://github.com/salemaziel/hcom/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/salemaziel/hcom/blob/main/LICENSE)
 
 > **Hook your coding agents together**
 
@@ -19,14 +19,14 @@ https://github.com/user-attachments/assets/1ce23ed9-f529-4be0-8124-816aa4c2fd43
 ## Install
 
 ```bash
-brew install aannoo/hcom/hcom
+brew install salemaziel/hcom/hcom
 ```
 
 <details><summary>Other install options</summary>
 
 ```bash
 # Shell installer for macOS, Linux, Android (Termux), and WSL
-curl -fsSL https://github.com/aannoo/hcom/releases/latest/download/hcom-installer.sh | sh
+curl -fsSL https://github.com/salemaziel/hcom/releases/latest/download/hcom-installer.sh | sh
 ```
 
 ```bash
@@ -369,7 +369,7 @@ Custom scripts: drop `*.sh` or `*.py` into `~/.hcom/scripts/` — auto-discovere
 ```bash
 # Prerequisites: Rust 1.86+
 
-git clone https://github.com/aannoo/hcom.git
+git clone https://github.com/salemaziel/hcom.git
 cd hcom
 cargo build
 cargo test

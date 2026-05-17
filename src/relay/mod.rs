@@ -743,10 +743,14 @@ mod tests {
     #[test]
     fn test_is_relay_enabled() {
         let mut config = HcomConfig::default();
-        // Default: relay_id empty, relay_enabled true → not enabled
+        // Default: relay_id empty, relay_enabled false → not enabled
         assert!(!is_relay_enabled(&config));
 
         config.relay_id = "some-id".to_string();
+        // relay_id set but relay_enabled still false → not enabled
+        assert!(!is_relay_enabled(&config));
+
+        config.relay_enabled = true;
         assert!(is_relay_enabled(&config));
 
         config.relay_enabled = false;

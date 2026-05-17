@@ -5,8 +5,8 @@ edition = "2024"
 authors = ["hcom"]
 description = "Connect Claude Code, Gemini CLI, Codex, and OpenCode so agents can message, watch, and spawn each other across terminals"
 license = "MIT"
-homepage = "https://github.com/aannoo/hcom"
-repository = "https://github.com/aannoo/hcom"
+homepage = "https://github.com/salemaziel/hcom"
+repository = "https://github.com/salemaziel/hcom"
 rust-version = "1.86"
 
 [[bin]]

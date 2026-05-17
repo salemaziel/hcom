@@ -24,10 +24,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aannoo/hcom"
-Repository = "https://github.com/aannoo/hcom"
-Issues = "https://github.com/aannoo/hcom/issues"
-Documentation = "https://github.com/aannoo/hcom#readme"
+Homepage = "https://github.com/salemaziel/hcom"
+Repository = "https://github.com/salemaziel/hcom"
+Issues = "https://github.com/salemaziel/hcom/issues"
+Documentation = "https://github.com/salemaziel/hcom#readme"
 
 [tool.maturin]
 bindings = "bin"

@@ -23,22 +23,54 @@ const SUBCOMMANDS: &[&str] = &[
     "fork",
     "review",
     "mcp",
+    "plugin",
     "mcp-server",
     "app-server",
+    "remote-control",
     "login",
     "logout",
     "completion",
+    "update",
+    "doctor",
     "sandbox",
     "debug",
     "apply",
     "app",
     "a",
     "cloud",
+    "exec-server",
     "features",
     "help",
 ];
 
 const EXEC_SUBCOMMANDS: &[&str] = &["exec", "e"];
+
+fn subcommand_alias(s: &str) -> &str {
+    match s {
+        "e" => "exec",
+        "a" => "apply",
+        _ => s,
+    }
+}
+
+fn contextual_value_flag_key(
+    flag: &str,
+    subcommand: Option<&str>,
+    positional_tokens: &[String],
+) -> String {
+    let flag_lower = flag.to_lowercase();
+    let nested = positional_tokens.first().map(String::as_str);
+
+    match (subcommand, nested, flag_lower.as_str()) {
+        (Some("plugin"), Some("add" | "list" | "remove"), "-m") => "--marketplace".to_string(),
+        (Some("app-server"), Some("generate-json-schema" | "generate-ts"), "-o") => {
+            "--out".to_string()
+        }
+        (Some("app-server"), Some("generate-ts"), "-p") => "--prettier".to_string(),
+        _ if CASE_SENSITIVE_VALUE_FLAGS.contains(&flag) => flag.to_string(),
+        _ => flag_lower,
+    }
+}
 
 /// Case-sensitive flags: -C -> --cd, -c -> --config
 /// These must be matched with original case, NOT lowercased.
@@ -57,11 +89,29 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "-h",
     "--help",
     "--version",
+    "--strict-config",
     "--skip-git-repo-check",
+    "--ephemeral",
+    "--ignore-user-config",
+    "--ignore-rules",
     "--json",
     "--last",
     "--all",
+    "--include-non-interactive",
     "--uncommitted",
+    "--analytics-default-enabled",
+    "--remote-control",
+    "--use-agent-identity-auth",
+    "--summary",
+    "--no-color",
+    "--ascii",
+    "--with-api-key",
+    "--with-access-token",
+    "--device-auth",
+    "--experimental",
+    "--bundled",
+    "--include-managed-config",
+    "--log-denials",
 ];
 
 const VALUE_FLAGS: &[&str] = &[
@@ -76,6 +126,9 @@ const VALUE_FLAGS: &[&str] = &[
     "--local-provider",
     "-p",
     "--profile",
+    "--profile-v2",
+    "--remote",
+    "--remote-auth-token-env",
     "-s",
     "--sandbox",
     "-a",
@@ -89,6 +142,32 @@ const VALUE_FLAGS: &[&str] = &[
     "--base",
     "--commit",
     "--title",
+    "--listen",
+    "--ws-auth",
+    "--ws-token-file",
+    "--ws-token-sha256",
+    "--ws-shared-secret-file",
+    "--ws-issuer",
+    "--ws-audience",
+    "--ws-max-clock-skew-seconds",
+    "--executor-id",
+    "--name",
+    "--download-url",
+    "--out",
+    "--prettier",
+    "--sock",
+    "--attempt",
+    "--env",
+    "--attempts",
+    "--branch",
+    "--limit",
+    "--cursor",
+    "--url",
+    "--bearer-token-env-var",
+    "--scopes",
+    "--marketplace",
+    "--permissions-profile",
+    "--allow-unix-socket",
 ];
 
 const CASE_SENSITIVE_VALUE_FLAGS: &[&str] = &["-C", "-c"];
@@ -546,13 +625,7 @@ fn parse_tokens_with_errors(
     if !raw_tokens.is_empty() {
         let first_lower = raw_tokens[0].to_lowercase();
         if SUBCOMMANDS.contains(&first_lower.as_str()) {
-            let normalized = if first_lower == "e" {
-                "exec"
-            } else if first_lower == "a" {
-                "apply"
-            } else {
-                &first_lower
-            };
+            let normalized = subcommand_alias(&first_lower);
             subcommand = Some(normalized.to_string());
             i = 1;
         }
@@ -572,7 +645,7 @@ fn parse_tokens_with_errors(
 
             // Determine flag key: case-sensitive or lowercase
             let is_cs = CASE_SENSITIVE_VALUE_FLAGS.contains(&pf.as_str());
-            let flag_key = if is_cs { pf.clone() } else { pf.to_lowercase() };
+            let flag_key = contextual_value_flag_key(pf, subcommand.as_deref(), &positional);
             let is_repeatable = if is_cs {
                 // -c is repeatable (lowercase), -C is not
                 *pf == pf.to_lowercase() && lookup.repeatable_set.contains(&pf.to_lowercase())
@@ -617,6 +690,15 @@ fn parse_tokens_with_errors(
             continue;
         }
 
+        if subcommand.is_none()
+            && positional.is_empty()
+            && SUBCOMMANDS.contains(&token_lower.as_str())
+        {
+            subcommand = Some(subcommand_alias(&token_lower).to_string());
+            i += 1;
+            continue;
+        }
+
         // Case-sensitive boolean flags (-V)
         if CASE_SENSITIVE_BOOLEAN_FLAGS.contains(&token.as_str()) {
             clean.push(token.clone());
@@ -653,7 +735,11 @@ fn parse_tokens_with_errors(
 
         if let Some(prefix) = matched_prefix {
             clean.push(token.clone());
-            let flag_key = prefix.trim_end_matches('=').to_string();
+            let flag_key = contextual_value_flag_key(
+                prefix.trim_end_matches('='),
+                subcommand.as_deref(),
+                &positional,
+            );
             let value = token[prefix.len()..].to_string();
             if lookup.repeatable_set.contains(&flag_key) {
                 match flag_values.entry(flag_key) {
@@ -799,6 +885,67 @@ mod tests {
         let spec = parse_tokens(&args, SourceType::Cli);
         assert_eq!(spec.subcommand, Some("resume".to_string()));
         assert_eq!(spec.positional_tokens, vec!["thread-123"]);
+    }
+
+    #[test]
+    fn test_parse_new_current_root_flags_before_subcommand_not_positionals() {
+        let args = sv(&[
+            "--remote",
+            "ws://127.0.0.1:8080",
+            "--remote-auth-token-env",
+            "CODEX_TOKEN",
+            "--profile-v2",
+            "work",
+            "resume",
+            "--include-non-interactive",
+            "--last",
+        ]);
+        let spec = parse_tokens(&args, SourceType::Cli);
+
+        assert_eq!(spec.subcommand, Some("resume".to_string()));
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.positional_tokens.is_empty());
+        assert!(spec.has_flag(&["--include-non-interactive"], &[]));
+        assert_eq!(
+            spec.get_flag_value("--remote"),
+            Some(FlagValue::Single("ws://127.0.0.1:8080".to_string()))
+        );
+        assert_eq!(
+            spec.get_flag_value("--remote-auth-token-env"),
+            Some(FlagValue::Single("CODEX_TOKEN".to_string()))
+        );
+        assert_eq!(
+            spec.get_flag_value("--profile-v2"),
+            Some(FlagValue::Single("work".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_codex_short_flags_use_contextual_meaning() {
+        let plugin = parse_tokens(&sv(&["plugin", "add", "-m", "local"]), SourceType::Cli);
+        assert_eq!(
+            plugin.get_flag_value("--marketplace"),
+            Some(FlagValue::Single("local".to_string()))
+        );
+        assert_eq!(plugin.flag_values.get("-m"), None);
+
+        let schema = parse_tokens(
+            &sv(&["app-server", "generate-json-schema", "-o", "schema-dir"]),
+            SourceType::Cli,
+        );
+        assert_eq!(
+            schema.get_flag_value("--out"),
+            Some(FlagValue::Single("schema-dir".to_string()))
+        );
+
+        let ts = parse_tokens(
+            &sv(&["app-server", "generate-ts", "-p", "prettier"]),
+            SourceType::Cli,
+        );
+        assert_eq!(
+            ts.get_flag_value("--prettier"),
+            Some(FlagValue::Single("prettier".to_string()))
+        );
     }
 
     #[test]

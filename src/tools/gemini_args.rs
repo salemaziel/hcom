@@ -17,6 +17,7 @@ const SUBCOMMANDS: &[&str] = &[
     "hook",
     "skills",
     "skill",
+    "gemma",
 ];
 
 fn subcommand_alias(s: &str) -> &str {
@@ -41,6 +42,7 @@ fn flag_aliases() -> &'static HashMap<&'static str, &'static str> {
         m.insert("-e", "--extensions");
         m.insert("-l", "--list-extensions");
         m.insert("-r", "--resume");
+        m.insert("-w", "--worktree");
         m.insert("-o", "--output-format");
         m.insert("-v", "--version");
         m.insert("-h", "--help");
@@ -63,6 +65,8 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--version",
     "-h",
     "--help",
+    "--skip-trust",
+    "--acp",
     "--experimental-acp",
     "--raw-output",
     "--accept-raw-output-risk",
@@ -78,15 +82,18 @@ const VALUE_FLAGS: &[&str] = &[
     "--approval-mode",
     "--allowed-mcp-server-names",
     "--allowed-tools",
+    "--policy",
+    "--admin-policy",
     "-e",
     "--extensions",
+    "--session-id",
     "--delete-session",
     "--include-directories",
     "-o",
     "--output-format",
 ];
 
-const OPTIONAL_VALUE_FLAGS: &[&str] = &["--resume", "-r"];
+const OPTIONAL_VALUE_FLAGS: &[&str] = &["--resume", "-r", "-w", "--worktree"];
 
 const REPEATABLE_FLAGS: &[&str] = &[
     "-e",
@@ -94,6 +101,8 @@ const REPEATABLE_FLAGS: &[&str] = &[
     "--include-directories",
     "--allowed-mcp-server-names",
     "--allowed-tools",
+    "--policy",
+    "--admin-policy",
 ];
 
 struct GeminiFlagLookup {
@@ -666,13 +675,16 @@ fn parse_tokens_with_errors(
             continue;
         }
 
-        // Optional value flags (--resume, -r)
+        // Optional value flags (--resume, -r, --worktree, -w)
         if lookup.opt_val_set.contains(&token_lower) {
             clean.push(token.clone());
             if i + 1 < raw_tokens.len() {
                 let next = &raw_tokens[i + 1];
                 let next_lower = next.to_lowercase();
-                if !looks_like_flag(&next_lower) && looks_like_session_id(next) {
+                let value_allowed = token_lower == "-w"
+                    || token_lower == "--worktree"
+                    || looks_like_session_id(next);
+                if !looks_like_flag(&next_lower) && value_allowed {
                     flag_values.insert(token_lower.clone(), FlagValue::Single(next.clone()));
                     clean.push(next.clone());
                     i += 2;
@@ -896,6 +908,39 @@ mod tests {
         let args = sv(&["extension"]);
         let spec = parse_tokens(&args, SourceType::Cli);
         assert_eq!(spec.subcommand, Some("extensions".to_string()));
+    }
+
+    #[test]
+    fn test_parse_new_current_value_flags_not_positionals() {
+        let args = sv(&[
+            "gemma",
+            "--skip-trust",
+            "--acp",
+            "--policy",
+            "policy.json",
+            "--admin-policy=admin.json",
+            "--session-id",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "--worktree",
+            "branch-name",
+        ]);
+        let spec = parse_tokens(&args, SourceType::Cli);
+
+        assert_eq!(spec.subcommand, Some("gemma".to_string()));
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.positional_tokens.is_empty());
+        assert!(spec.has_flag(&["--skip-trust"], &[]));
+        assert!(spec.has_flag(&["--acp"], &[]));
+        assert_eq!(
+            spec.get_flag_value("--session-id"),
+            Some(FlagValue::Single(
+                "550e8400-e29b-41d4-a716-446655440000".to_string()
+            ))
+        );
+        assert_eq!(
+            spec.get_flag_value("--worktree"),
+            Some(FlagValue::Single("branch-name".to_string()))
+        );
     }
 
     #[test]

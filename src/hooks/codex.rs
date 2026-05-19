@@ -1291,7 +1291,10 @@ fn codex_hcom_hook_keys_trusted_for_version(
         let Some(entry) = state.get(key) else {
             return false;
         };
-        entry.get("trusted_hash").and_then(|v| v.as_str()).is_some()
+        let Some(trusted_hash) = entry.get("trusted_hash").and_then(|v| v.as_str()) else {
+            return false;
+        };
+        !trusted_hash.is_empty()
             && entry.get("enabled").and_then(|v| v.as_bool()) != Some(false)
             && entry
                 .get(HCOM_CODEX_CLI_VERSION_KEY)
@@ -1344,11 +1347,13 @@ fn verify_hcom_hook_keys_trusted_for_version(
         if state_entry.get("enabled").and_then(|v| v.as_bool()) == Some(false) {
             return Err(VerifyFailReason::HookDisabled { command });
         }
-        if state_entry
+        let trusted_hash = state_entry
             .get("trusted_hash")
             .and_then(|v| v.as_str())
-            .is_none()
-        {
+            .ok_or_else(|| VerifyFailReason::HookTrustMissing {
+                command: command.clone(),
+            })?;
+        if trusted_hash.is_empty() {
             return Err(VerifyFailReason::HookTrustMissing { command });
         }
         if state_entry
@@ -2097,6 +2102,36 @@ mod tests {
         assert_eq!(
             repaired_doc["hooks"]["state"][&first_key]["enabled"].as_bool(),
             Some(true)
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_setup_codex_hooks_repairs_stale_trusted_hash() {
+        let (_tmp, _hcom_dir, _home, _guard) = isolated_test_env();
+        unsafe { std::env::set_var("HCOM_TEST_CODEX_CLI_VERSION", "codex-cli 0.131.0") };
+
+        assert!(setup_codex_hooks(false));
+        assert!(verify_codex_hooks_installed(false));
+
+        let config_path = get_codex_config_path();
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        let mut doc = content.parse::<DocumentMut>().unwrap();
+        let state = doc["hooks"]["state"].as_table_like_mut().unwrap();
+        let first_key = state.iter().next().unwrap().0.to_string();
+        state.get_mut(&first_key).unwrap()["trusted_hash"] = value("sha256:stale");
+        paths::atomic_write_io(&config_path, &doc.to_string()).unwrap();
+
+        // Cheap verify does not spawn Codex app-server to compare currentHash.
+        assert!(verify_codex_hooks_installed(false));
+
+        assert!(setup_codex_hooks(false));
+        assert!(verify_codex_hooks_installed(false));
+        let repaired = std::fs::read_to_string(&config_path).unwrap();
+        let repaired_doc = repaired.parse::<DocumentMut>().unwrap();
+        assert_ne!(
+            repaired_doc["hooks"]["state"][&first_key]["trusted_hash"].as_str(),
+            Some("sha256:stale")
         );
     }
 

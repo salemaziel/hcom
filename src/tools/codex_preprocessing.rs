@@ -155,9 +155,10 @@ pub fn add_hook_trust_bypass_if_supported(codex_args: &[String]) -> Vec<String> 
     if !codex_supports_bypass_hook_trust() {
         return codex_args.to_vec();
     }
-    if crate::hooks::codex::codex_hcom_hooks_trusted_locally() {
-        return codex_args.to_vec();
-    }
+
+    // This is the launch-time guardrail. Cheap status/verify paths only inspect
+    // local metadata, but before opening Codex we ask Codex for authoritative
+    // currentHash values and rewrite hcom's trust entries if needed.
     match crate::hooks::codex::ensure_codex_hcom_hooks_trusted() {
         Ok(()) if crate::hooks::codex::codex_hcom_hooks_trusted_locally() => {
             return codex_args.to_vec();
@@ -565,6 +566,27 @@ mod tests {
         assert!(!result.contains(&BYPASS_HOOK_TRUST_FLAG.to_string()));
         let healed = std::fs::read_to_string(config_path).unwrap();
         assert!(healed.contains("hcom_codex_cli_version = \"0.131.0\""));
+    }
+
+    #[test]
+    #[serial]
+    fn test_add_hook_trust_bypass_self_heals_stale_trusted_hash() {
+        let _version_guard = EnvGuard::set("HCOM_TEST_CODEX_CLI_VERSION", "codex 0.131.0");
+        let dir = tempfile::tempdir().unwrap();
+        let _codex_home_guard = EnvGuard::set("CODEX_HOME", dir.path().to_string_lossy().as_ref());
+        write_trusted_hcom_codex_hooks(dir.path());
+        let config_path = dir.path().join("config.toml");
+        let stale = std::fs::read_to_string(&config_path)
+            .unwrap()
+            .replace("sha256:test-0", "sha256:stale");
+        std::fs::write(&config_path, stale).unwrap();
+
+        let args = s(&["-m", "o3"]);
+        let result = add_hook_trust_bypass_if_supported(&args);
+        assert!(!result.contains(&BYPASS_HOOK_TRUST_FLAG.to_string()));
+        let healed = std::fs::read_to_string(config_path).unwrap();
+        assert!(healed.contains("sha256:test-0"));
+        assert!(!healed.contains("sha256:stale"));
     }
 
     #[test]

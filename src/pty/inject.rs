@@ -1,11 +1,20 @@
 //! TCP injection server — accepts text on a local port and writes to PTY master.
+//!
+//! Every connection must begin with a [`NONCE_LEN`]-byte session nonce (generated
+//! at server start and stored in the DB as `inject_nonce:{instance}`). The server
+//! strips and verifies the nonce prefix before processing the payload; connections
+//! that send the wrong nonce are silently dropped. This prevents unrelated local
+//! processes from injecting into the PTY even if they discover the ephemeral port.
 
 use anyhow::{Context, Result};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::AsRawFd;
 
-/// Magic prefix for query commands (not injection)
+/// Length of the per-session nonce prefix required on every inject connection.
+pub const NONCE_LEN: usize = 16;
+
+/// Magic prefix for query commands (after the nonce has been stripped)
 const QUERY_PREFIX: u8 = 0x00;
 
 /// Result of reading from an inject client
@@ -43,11 +52,12 @@ impl QueryClient {
 pub struct InjectServer {
     listener: TcpListener,
     port: u16,
+    nonce: [u8; NONCE_LEN],
     clients: Vec<(TcpStream, Vec<u8>)>,
 }
 
 impl InjectServer {
-    /// Create a new injection server on localhost
+    /// Create a new injection server on localhost with a fresh random nonce.
     pub fn new() -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").context("Failed to bind inject server")?;
         let port = listener.local_addr()?.port();
@@ -55,9 +65,12 @@ impl InjectServer {
         // Set non-blocking
         listener.set_nonblocking(true)?;
 
+        let nonce: [u8; NONCE_LEN] = rand::random();
+
         Ok(Self {
             listener,
             port,
+            nonce,
             clients: Vec::new(),
         })
     }
@@ -65,6 +78,11 @@ impl InjectServer {
     /// Get the port the server is listening on
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the session nonce (must be prepended by every client).
+    pub fn nonce(&self) -> &[u8; NONCE_LEN] {
+        &self.nonce
     }
 
     /// Get the listener raw file descriptor for polling
@@ -99,6 +117,10 @@ impl InjectServer {
     /// - Inject(text): text to write to PTY
     /// - ScreenQuery(index): caller should dump screen and call respond_query()
     /// - Pending: no data ready yet
+    ///
+    /// The first [`NONCE_LEN`] bytes of every connection must match the server's
+    /// session nonce. Connections with an invalid or missing nonce are silently
+    /// dropped (returns Pending after removing the client).
     pub fn read_client(&mut self, index: usize) -> Result<InjectResult> {
         if index >= self.clients.len() {
             return Ok(InjectResult::Pending);
@@ -113,9 +135,16 @@ impl InjectServer {
                     // EOF - client closed, process the data
                     let data = std::mem::take(buffer);
 
-                    // Check for command (starts with \x00)
-                    if data.first() == Some(&QUERY_PREFIX) {
-                        let cmd = std::str::from_utf8(&data[1..]).unwrap_or("").trim();
+                    // Verify nonce prefix — drop connections that don't supply it.
+                    if data.len() < NONCE_LEN || &data[..NONCE_LEN] != self.nonce {
+                        self.clients.remove(index);
+                        return Ok(InjectResult::Pending);
+                    }
+                    let payload = &data[NONCE_LEN..];
+
+                    // Check for query command (starts with \x00 after nonce)
+                    if payload.first() == Some(&QUERY_PREFIX) {
+                        let cmd = std::str::from_utf8(&payload[1..]).unwrap_or("").trim();
                         let (stream, _) = self.clients.remove(index);
                         let command = match cmd {
                             "SCREEN" => QueryCommand::Screen,
@@ -125,7 +154,7 @@ impl InjectServer {
                     }
 
                     self.clients.remove(index);
-                    return Ok(InjectResult::Inject(self.process_inject_data(&data)));
+                    return Ok(InjectResult::Inject(self.process_inject_data(payload)));
                 }
                 Ok(n) => {
                     buffer.extend_from_slice(&buf[..n]);

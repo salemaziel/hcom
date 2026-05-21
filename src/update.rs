@@ -1,12 +1,11 @@
-//! Auto-update checker — checks latest release via git ls-remote once daily.
-//! Uses git ls-remote instead of the GitHub REST API to avoid rate limits.
+//! Auto-update checker — checks latest release via git ls-remote.
+//! The update check is only triggered when the user explicitly runs `hcom update`.
+//! `get_update_info()` is read-only and only surfaces a cached result written by
+//! the last `hcom update` invocation.
 
 use crate::paths::{FLAGS_DIR, atomic_write, hcom_path};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-
-const CHECK_INTERVAL: Duration = Duration::from_secs(86400); // 24 hours
 
 pub(crate) fn flag_path() -> PathBuf {
     hcom_path(&[FLAGS_DIR, "update_check"])
@@ -27,45 +26,6 @@ fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
 }
 
 /// Spawn a detached background process to fetch latest version and write the cache file.
-/// Returns immediately — result shows up on next command.
-fn spawn_background_check(flag: &Path, current: &str) {
-    let flag_str = flag.to_string_lossy().to_string();
-    let current = current.to_string();
-
-    // Shell script: uses git ls-remote (no rate limits) to get latest tag, compares, writes cache.
-    // Runs completely detached — parent doesn't wait.
-    let script = format!(
-        r#"
-TAG=$(GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=5 git ls-remote --tags --sort=version:refname https://github.com/aannoo/hcom.git 2>/dev/null | grep -v '\^{{}}' | tail -1 | sed 's|.*refs/tags/||')
-# Fallback to GitHub API if git unavailable
-if [ -z "$TAG" ]; then
-    TAG=$(curl -fsSL --max-time 5 https://api.github.com/repos/aannoo/hcom/releases/latest 2>/dev/null | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-fi
-VER="${{TAG#v}}"
-if [ -n "$VER" ]; then
-    # Compare: if remote > current, write version; else write empty
-    REMOTE=$(echo "$VER" | awk -F. '{{printf "%d%06d%06d", $1, $2, $3}}')
-    LOCAL=$(echo "{current}" | awk -F. '{{printf "%d%06d%06d", $1, $2, $3}}')
-    if [ "$REMOTE" -gt "$LOCAL" ] 2>/dev/null; then
-        printf '%s' "$VER" > "{flag_str}"
-    else
-        printf '' > "{flag_str}"
-    fi
-else
-    printf '' > "{flag_str}"
-fi
-"#
-    );
-
-    // Fire and forget — detach from parent process
-    let _ = std::process::Command::new("sh")
-        .args(["-c", &script])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-}
-
 /// Synchronously fetch the latest version. Tries git ls-remote first (no rate limits),
 /// falls back to GitHub API if git is unavailable.
 fn fetch_latest_version() -> Option<String> {
@@ -78,7 +38,7 @@ fn fetch_via_git() -> Option<String> {
             "ls-remote",
             "--tags",
             "--sort=version:refname",
-            "https://github.com/aannoo/hcom.git",
+            "https://github.com/salemaziel/hcom.git",
         ])
         .env("GIT_HTTP_LOW_SPEED_LIMIT", "1000")
         .env("GIT_HTTP_LOW_SPEED_TIME", "5")
@@ -108,7 +68,7 @@ fn fetch_via_curl() -> Option<String> {
             "-fsSL",
             "--max-time",
             "5",
-            "https://api.github.com/repos/aannoo/hcom/releases/latest",
+            "https://api.github.com/repos/salemaziel/hcom/releases/latest",
         ])
         .output()
         .ok()?;
@@ -140,7 +100,9 @@ pub struct UpdateInfo {
 
 /// Synchronously fetch current + latest version info from GitHub.
 /// Single source of truth for all update-related logic (fetching, parsing, command selection).
-/// Used by `hcom update` command for fresh checks.
+/// Used by `hcom update` command for fresh checks. Also writes the result to the
+/// update-check flag file so that subsequent `get_update_info()` calls (which are
+/// read-only) can surface the update notice banner without re-fetching.
 pub fn fetch_update_info() -> anyhow::Result<UpdateInfo> {
     let current = env!("CARGO_PKG_VERSION").to_string();
     let latest =
@@ -150,6 +112,14 @@ pub fn fetch_update_info() -> anyhow::Result<UpdateInfo> {
     let latest_parsed = parse_version(&latest);
     let available = current_parsed < latest_parsed;
     let cmd = get_update_cmd();
+
+    // Persist result so the banner appears on subsequent commands without re-fetching.
+    let flag = flag_path();
+    if available {
+        atomic_write(&flag, &latest);
+    } else {
+        atomic_write(&flag, "");
+    }
 
     Ok(UpdateInfo {
         current,
@@ -164,7 +134,7 @@ fn get_update_cmd() -> &'static str {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(_) => {
-            return "curl -fsSL https://github.com/aannoo/hcom/releases/latest/download/hcom-installer.sh | sh";
+            return "curl -fsSL https://github.com/salemaziel/hcom/releases/latest/download/hcom-installer.sh | sh";
         }
     };
 
@@ -197,7 +167,7 @@ fn get_update_cmd() -> &'static str {
     }
 
     // Default: curl installer
-    "curl -fsSL https://github.com/aannoo/hcom/releases/latest/download/hcom-installer.sh | sh"
+    "curl -fsSL https://github.com/salemaziel/hcom/releases/latest/download/hcom-installer.sh | sh"
 }
 
 fn is_user_site_pip_install(exe: &Path) -> bool {
@@ -241,41 +211,22 @@ fn is_user_site_pip_install(exe: &Path) -> bool {
     false
 }
 
-/// Check for updates (once daily cached). Returns (latest_version, update_cmd) or None.
+/// Check for updates from the local cache only. Returns (latest_version, update_cmd) or None.
 ///
-/// Never blocks: if the cache is stale, spawns a background process to refresh it
-/// and returns the current (possibly stale) cached result.
+/// Read-only: never spawns a subprocess. The cache is populated only when the
+/// user explicitly runs `hcom update` (or `hcom update --check`), which calls
+/// `fetch_update_info()` and writes the result to the flag file.
 pub fn get_update_info() -> Option<(String, &'static str)> {
     let flag = flag_path();
     let current = env!("CARGO_PKG_VERSION");
 
-    // Check if cache is stale and needs refresh
-    let should_check = if flag.exists() {
-        match flag.metadata().and_then(|m| m.modified()) {
-            Ok(mtime) => {
-                SystemTime::now()
-                    .duration_since(mtime)
-                    .unwrap_or(Duration::ZERO)
-                    > CHECK_INTERVAL
-            }
-            Err(_) => true,
-        }
-    } else {
-        true
-    };
-
-    if should_check {
-        // Non-blocking: spawn background check, result appears on next command
-        spawn_background_check(&flag, current);
-    }
-
-    // Read cached result (may be from a previous check)
+    // Read cached result written by the last explicit `hcom update` invocation.
     let latest = fs::read_to_string(&flag).ok()?.trim().to_string();
     if latest.is_empty() {
         return None;
     }
 
-    // Double-check (handles manual upgrades)
+    // Clear stale cache if already on latest (handles manual upgrades).
     if parse_version(current) >= parse_version(&latest) {
         atomic_write(&flag, "");
         return None;

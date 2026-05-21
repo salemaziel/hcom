@@ -5,8 +5,8 @@
   "author": {
     "name": "aannoo"
   },
-  "homepage": "https://github.com/aannoo/hcom",
-  "repository": "https://github.com/aannoo/hcom",
+  "homepage": "https://github.com/salemaziel/hcom",
+  "repository": "https://github.com/salemaziel/hcom",
   "license": "MIT",
   "keywords": ["hcom", "multi-agent", "communication", "claude", "gemini", "codex", "opencode"]
 }

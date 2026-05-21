@@ -1298,6 +1298,7 @@ impl Proxy {
         let running = self.running.clone();
         let delivery_state = self.delivery_state.clone();
         let inject_port = self.inject_server.port();
+        let inject_nonce = self.inject_server.nonce().to_vec();
         let tool = self.config.tool.clone();
         let user_activity_cooldown_ms = self.user_activity_cooldown_ms;
         let notify_port_shared = self.notify_port.clone();
@@ -1346,8 +1347,10 @@ impl Proxy {
                         "notify.registered",
                         &format!("Registered notify port {}", notify.port()),
                     );
-                    // Register inject port for screen queries
-                    if let Err(e) = db.register_inject_port(&instance_name, inject_port) {
+                    // Register inject port and nonce for screen queries
+                    if let Err(e) =
+                        db.register_inject_endpoint(&instance_name, inject_port, &inject_nonce)
+                    {
                         log_warn(
                             "native",
                             "inject.register_fail",
@@ -1374,6 +1377,7 @@ impl Proxy {
             let state = DeliveryState {
                 screen: delivery_state,
                 inject_port,
+                inject_nonce,
                 user_activity_cooldown_ms,
             };
 

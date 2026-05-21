@@ -335,6 +335,7 @@ pub struct GateResult {
 pub struct DeliveryState {
     pub screen: Arc<std::sync::RwLock<ScreenState>>,
     pub inject_port: u16,
+    pub inject_nonce: Vec<u8>,
     pub user_activity_cooldown_ms: u64,
 }
 
@@ -441,7 +442,7 @@ pub(crate) fn evaluate_gate(
 /// Inject text to PTY via TCP (text only, no Enter).
 /// Strips all C0 control chars (0x00-0x1F) except tab. This blocks ESC (0x1B),
 /// so ANSI escape sequences cannot pass through.
-fn inject_text(port: u16, text: &str) -> bool {
+fn inject_text(port: u16, nonce: &[u8], text: &str) -> bool {
     let safe_text: String = text
         .chars()
         .filter(|c| *c >= ' ' || *c == '\t') // >= 0x20 or tab; blocks ESC, NULL, BEL, etc.
@@ -452,15 +453,26 @@ fn inject_text(port: u16, text: &str) -> bool {
     }
 
     match TcpStream::connect(format!("127.0.0.1:{}", port)) {
-        Ok(mut stream) => stream.write_all(safe_text.as_bytes()).is_ok(),
+        Ok(mut stream) => {
+            // Prepend nonce so the server can authenticate this connection.
+            if stream.write_all(nonce).is_err() {
+                return false;
+            }
+            stream.write_all(safe_text.as_bytes()).is_ok()
+        }
         Err(_) => false,
     }
 }
 
 /// Inject Enter key to PTY via TCP
-fn inject_enter(port: u16) -> bool {
+fn inject_enter(port: u16, nonce: &[u8]) -> bool {
     match TcpStream::connect(format!("127.0.0.1:{}", port)) {
-        Ok(mut stream) => stream.write_all(b"\r").is_ok(),
+        Ok(mut stream) => {
+            if stream.write_all(nonce).is_err() {
+                return false;
+            }
+            stream.write_all(b"\r").is_ok()
+        }
         Err(_) => false,
     }
 }
@@ -646,10 +658,10 @@ pub fn run_delivery_loop(
                 } else {
                     text
                 };
-                if inject_text(state.inject_port, &text) {
+                if inject_text(state.inject_port, &state.inject_nonce, &text) {
                     // 200ms delay: let TUI process injected text before Enter
                     std::thread::sleep(Duration::from_millis(200));
-                    if inject_enter(state.inject_port) {
+                    if inject_enter(state.inject_port, &state.inject_nonce) {
                         first_message_injected = true;
                         log_info(
                             "native",
@@ -674,7 +686,7 @@ pub fn run_delivery_loop(
             if let Err(e) = db.register_notify_port(&current_name, notify.port()) {
                 log_warn("native", "delivery.register_notify_fail", &format!("{}", e));
             }
-            if let Err(e) = db.register_inject_port(&current_name, state.inject_port) {
+            if let Err(e) = db.register_inject_endpoint(&current_name, state.inject_port, &state.inject_nonce) {
                 log_warn("native", "delivery.register_inject_fail", &format!("{}", e));
             }
         }
@@ -747,7 +759,7 @@ pub fn run_delivery_loop(
                     if let Err(e) = db.register_notify_port(&current_name, notify.port()) {
                         log_warn("native", "delivery.register_notify_fail", &format!("{}", e));
                     }
-                    if let Err(e) = db.register_inject_port(&current_name, state.inject_port) {
+                    if let Err(e) = db.register_inject_endpoint(&current_name, state.inject_port, &state.inject_nonce) {
                         log_warn("native", "delivery.register_inject_fail", &format!("{}", e));
                     }
 
@@ -861,7 +873,7 @@ pub fn run_delivery_loop(
                             text
                         };
 
-                        if inject_text(state.inject_port, &text) {
+                        if inject_text(state.inject_port, &state.inject_nonce, &text) {
                             log_info(
                                 "native",
                                 "delivery.injected",
@@ -1127,7 +1139,7 @@ pub fn run_delivery_loop(
                                 if !screen.approval {
                                     drop(screen);
                                     log_info("native", "delivery.send_enter", "Sending Enter key");
-                                    inject_enter(state.inject_port);
+                                    inject_enter(state.inject_port, &state.inject_nonce);
                                 } else {
                                     log_info(
                                         "native",
@@ -1187,7 +1199,7 @@ pub fn run_delivery_loop(
                                         enter_attempt, input_text
                                     ),
                                 );
-                                inject_enter(state.inject_port);
+                                inject_enter(state.inject_port, &state.inject_nonce);
                                 enter_attempt += 1;
                                 phase_started_at = Instant::now();
                                 let backoff = Duration::from_millis(200 * (1 << enter_attempt));
@@ -1441,6 +1453,7 @@ mod tests {
         DeliveryState {
             screen: Arc::new(std::sync::RwLock::new(screen)),
             inject_port: 0,
+            inject_nonce: Vec::new(),
             user_activity_cooldown_ms: cooldown_ms,
         }
     }

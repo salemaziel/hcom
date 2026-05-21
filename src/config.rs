@@ -256,8 +256,8 @@ impl Default for HcomConfig {
             relay_id: String::new(),
             relay_token: String::new(),
             relay_psk: String::new(),
-            relay_enabled: true,
-            auto_approve: true,
+            relay_enabled: false,
+            auto_approve: false,
             auto_subscribe: "collision".to_string(),
             name_export: String::new(),
         }
@@ -870,7 +870,7 @@ url = ""
 id = ""
 token = ""
 psk = ""
-enabled = true
+enabled = false
 
 [launch]
 tag = ""
@@ -896,7 +896,7 @@ args = ""
 
 [preferences]
 timeout = 86400
-auto_approve = true
+auto_approve = false
 name_export = ""
 "#;
     toml::Value::Table(toml_str.parse::<toml::Table>().unwrap())
@@ -1392,8 +1392,8 @@ mod tests {
         assert_eq!(config.terminal, "default");
         assert_eq!(config.tag, "");
         assert_eq!(config.codex_sandbox_mode, "workspace");
-        assert!(config.relay_enabled);
-        assert!(config.auto_approve);
+        assert!(!config.relay_enabled);
+        assert!(!config.auto_approve);
         assert_eq!(config.auto_subscribe, "collision");
         assert!(config.collect_errors().is_empty());
     }
@@ -1575,8 +1575,8 @@ mod tests {
 
         assert_eq!(dict.get("HCOM_TIMEOUT"), Some(&"86400".to_string()));
         assert_eq!(dict.get("HCOM_TERMINAL"), Some(&"default".to_string()));
-        assert_eq!(dict.get("HCOM_AUTO_APPROVE"), Some(&"1".to_string()));
-        assert_eq!(dict.get("HCOM_RELAY_ENABLED"), Some(&"1".to_string()));
+        assert_eq!(dict.get("HCOM_AUTO_APPROVE"), Some(&"0".to_string()));
+        assert_eq!(dict.get("HCOM_RELAY_ENABLED"), Some(&"0".to_string()));
 
         let roundtrip = HcomConfig::from_env_dict(&dict).unwrap();
         assert_eq!(config, roundtrip);

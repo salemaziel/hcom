@@ -30,6 +30,33 @@ impl HcomDb {
         self.upsert_notify_endpoint(name, "inject", port)
     }
 
+    /// Register inject port together with its session nonce.
+    ///
+    /// The nonce is stored in the KV table under `inject_nonce:{instance}` so
+    /// that injection clients can retrieve it and prepend it to every payload.
+    pub fn register_inject_endpoint(&self, name: &str, port: u16, nonce: &[u8]) -> Result<()> {
+        self.upsert_notify_endpoint(name, "inject", port)?;
+        let nonce_hex: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
+        self.kv_set(&format!("inject_nonce:{name}"), Some(&nonce_hex))?;
+        Ok(())
+    }
+
+    /// Retrieve the inject session nonce for an instance (as raw bytes).
+    ///
+    /// Returns `None` if no nonce has been registered (e.g. for legacy orphan
+    /// entries or when the instance is not running).
+    pub fn get_inject_nonce(&self, name: &str) -> Option<Vec<u8>> {
+        let hex = self
+            .kv_get(&format!("inject_nonce:{name}"))
+            .ok()
+            .flatten()?;
+        // Decode hex string back to bytes
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+            .collect()
+    }
+
     /// Delete notify endpoints for an instance
     pub fn delete_notify_endpoints(&self, name: &str) -> Result<()> {
         self.conn.execute(

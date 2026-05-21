@@ -202,7 +202,7 @@ fn list_scripts() -> i32 {
     }
 
     if !user.is_empty() {
-        println!("User Scripts:");
+        println!("User Scripts (from ~/.hcom/scripts/ — executed with your full privileges):");
         println!();
         for s in &user {
             println!("  {}", s.name);
@@ -340,6 +340,8 @@ pub fn cmd_run(db: &HcomDb, args: &RunArgs, ctx: Option<&CommandContext>) -> i32
     // Run the script
     match &script.source {
         ScriptSource::User { path } => {
+            // NOTE: User scripts in ~/.hcom/scripts/ execute with full user
+            // privileges. Only place trusted scripts in that directory.
             let mut cmd = if path.extension().and_then(|e| e.to_str()) == Some("py") {
                 let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".into());
                 let mut c = Command::new(&python);

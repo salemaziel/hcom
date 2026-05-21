@@ -1,0 +1,106 @@
+# hcom configuration reference
+# Copy or symlink this file to ~/.hcom/config.toml to use it.
+# All values shown are the defaults unless otherwise noted.
+# Run `hcom config --help` for CLI-based config management.
+# Run `hcom run docs --config` for full inline documentation.
+
+# ── General preferences ──────────────────────────────────────────────────────
+
+[preferences]
+
+# Max seconds an agent session runs before hcom considers it stalled.
+# Range: 1–86400. Default: 86400 (24 h).
+timeout = 86400
+
+# Max seconds a sub-agent call can run. Default: 30.
+subagent_timeout = 30
+
+# Auto-approve safe hcom commands inside agent tool calls.
+# SECURITY: Keep this false (the default). When true, agents can silently
+# invoke hcom send, list, transcript, relay, and hooks commands on your behalf.
+auto_approve = false
+
+# Which subscriptions to activate automatically when starting an agent.
+# Options: "collision" (default) | "all" | "none"
+auto_subscribe = "collision"
+
+# Terminal preset to use when launching agents in a terminal window.
+# Use the name of a built-in preset (e.g. wezterm, kitty, iterm2, alacritty)
+# or "default" to let hcom pick, or "here" to run in the current terminal.
+# Run `hcom config terminal --list` for available presets.
+# WARNING: Custom template strings are executed as shell commands.
+# Do not include shell metacharacters ($ ` ; | & ( ) < >) in the value.
+terminal = "default"
+
+# Optional tag applied to every agent launched in this environment.
+# Must match ^[a-zA-Z0-9-]+$. Leave empty for no tag.
+tag = ""
+
+# Free-text hints injected into every agent's system prompt.
+hints = ""
+
+# Free-text notes appended to system prompts (lower priority than hints).
+notes = ""
+
+# Name exported to other agents via the relay. Leave empty to use hostname.
+name_export = ""
+
+# ── Tool-specific extra CLI arguments ────────────────────────────────────────
+
+[launch.claude]
+# Extra arguments appended to every `claude` invocation.
+args = ""
+
+[launch.gemini]
+args = ""
+# Custom system prompt for Gemini (overrides the built-in prompt).
+system_prompt = ""
+
+[launch.codex]
+args = ""
+# Sandbox mode: "workspace" | "untrusted" | "danger-full-access" | "none"
+sandbox_mode = "workspace"
+# Custom system prompt for Codex (overrides the built-in prompt).
+system_prompt = ""
+
+[launch.opencode]
+args = ""
+
+# ── Relay (encrypted MQTT mesh) ───────────────────────────────────────────────
+# The relay lets hcom instances on different machines communicate over MQTT.
+#
+# SECURITY NOTES:
+#   • relay.enabled defaults to FALSE — you must explicitly opt in.
+#     When enabled, agent state (names, statuses, tags) is sent to an MQTT
+#     broker. Use a private broker for any sensitive workloads.
+#   • relay.psk is the symmetric encryption key for the entire relay group.
+#     Anyone who obtains the PSK can read and forge relay messages.
+#     It is stored here in plaintext — protect this file (chmod 600).
+#   • relay.token is the MQTT bearer token for private broker auth.
+#     Treat it like a password; do not commit it to version control.
+#   • Generate relay credentials with: hcom relay new
+
+[relay]
+
+# Set to true to activate the relay. Requires relay.id and relay.psk.
+enabled = false
+
+# Unique relay group ID (UUID). All devices in the same relay group share
+# the same id and psk. Generate with: hcom relay new
+id = ""
+
+# Base64-encoded 32-byte symmetric encryption key.
+# KEEP THIS SECRET — equivalent to a private key for the relay group.
+# Generate with: hcom relay new
+psk = ""
+
+# MQTT bearer token for private broker authentication (optional).
+# Leave empty when using a public broker without authentication.
+token = ""
+
+# MQTT broker URL. Defaults to a public test broker when empty.
+# Format: mqtts://host:port  or  mqtt://host:port
+# SECURITY: Public shared brokers (broker.emqx.io, broker.hivemq.com,
+# test.mosquitto.org) are suitable for development only. Use a private,
+# TLS-enabled broker for production or sensitive workloads.
+broker = ""

@@ -67,11 +67,14 @@ fn get_pty_instances(db: &HcomDb) -> Vec<(String, i32)> {
     .unwrap_or_default()
 }
 
-/// Send data on a single TCP connection.
-fn inject_raw(port: i32, data: &[u8]) -> Result<(), String> {
+/// Send data on a single TCP connection, prepending the session nonce.
+fn inject_raw(port: i32, nonce: &[u8], data: &[u8]) -> Result<(), String> {
     let mut stream =
         TcpStream::connect(format!("127.0.0.1:{port}")).map_err(|e| format!("connect: {e}"))?;
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
+    stream
+        .write_all(nonce)
+        .map_err(|e| format!("write nonce: {e}"))?;
     stream.write_all(data).map_err(|e| format!("write: {e}"))?;
     Ok(())
 }
@@ -83,15 +86,16 @@ pub fn inject_text_remote_result(
     enter: bool,
 ) -> Result<String, String> {
     let port = get_inject_port(db, name).ok_or_else(|| format!("No inject port for '{name}'."))?;
+    let nonce = db.get_inject_nonce(name).unwrap_or_default();
 
     if !text.is_empty() {
-        inject_raw(port, text.as_bytes())?;
+        inject_raw(port, &nonce, text.as_bytes())?;
     }
     if enter {
         if !text.is_empty() {
             std::thread::sleep(Duration::from_millis(100));
         }
-        inject_raw(port, b"\r")?;
+        inject_raw(port, &nonce, b"\r")?;
     }
 
     let label = match (text.is_empty(), enter) {
@@ -117,10 +121,12 @@ fn inject_text(db: &HcomDb, name: &str, text: &str, enter: bool) -> i32 {
 }
 
 /// Send screen query to inject port, get back parsed JSON.
-fn query_screen(port: i32) -> Option<serde_json::Value> {
+fn query_screen(port: i32, nonce: &[u8]) -> Option<serde_json::Value> {
     let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
+    // Prepend nonce before the query command.
+    stream.write_all(nonce).ok()?;
     stream.write_all(b"\x00SCREEN\n").ok()?;
     stream.shutdown(std::net::Shutdown::Write).ok()?;
 
@@ -144,7 +150,8 @@ pub fn read_instance_screen(
             name
         )
     })?;
-    let result = query_screen(port)
+    let nonce = db.get_inject_nonce(name).unwrap_or_default();
+    let result = query_screen(port, &nonce)
         .ok_or_else(|| format!("No response from '{}' (port {}).", name, port))?;
     if raw_json {
         Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -309,7 +316,8 @@ fn handle_screen(db: &HcomDb, argv: &[String]) -> i32 {
                 return 1;
             }
         };
-        match query_screen(port) {
+        let nonce = db.get_inject_nonce(name).unwrap_or_default();
+        match query_screen(port, &nonce) {
             Some(result) => {
                 if raw_json {
                     println!("{}", serde_json::to_string(&result).unwrap_or_default());
@@ -333,7 +341,8 @@ fn handle_screen(db: &HcomDb, argv: &[String]) -> i32 {
 
         let mut found = false;
         for (inst_name, port) in &instances {
-            if let Some(result) = query_screen(*port) {
+            let nonce = db.get_inject_nonce(inst_name).unwrap_or_default();
+            if let Some(result) = query_screen(*port, &nonce) {
                 if found {
                     println!();
                 }

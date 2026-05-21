@@ -1377,6 +1377,7 @@ mod tests {
         let psk = [0x55u8; 32];
         let config = HcomConfig {
             relay_id: "relay-1".to_string(),
+            relay_enabled: true,
             relay_psk: super::super::encode_psk(&psk),
             ..Default::default()
         };

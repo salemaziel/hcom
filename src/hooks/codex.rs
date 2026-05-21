@@ -1401,7 +1401,7 @@ fn ensure_codex_feature_enabled(
         std::fs::read_to_string(config_path)
             .map_err(|e| e.to_string())?
             .parse::<DocumentMut>()
-            .unwrap_or_default()
+            .map_err(|e| format!("failed to parse Codex config: {e}"))?
     } else {
         DocumentMut::new()
     };
@@ -2195,6 +2195,44 @@ mod tests {
                 .get("statusMessage")
                 .is_none()
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_ensure_codex_hcom_hooks_trusted_errors_on_invalid_config_without_overwrite() {
+        let (_tmp, _hcom_dir, _home, _guard) = isolated_test_env();
+        unsafe { std::env::set_var("HCOM_TEST_CODEX_CLI_VERSION", "codex-cli 0.131.0") };
+
+        assert!(setup_codex_hooks(false));
+
+        let config_path = get_codex_config_path();
+        let invalid_config = "hooks = [";
+        std::fs::write(&config_path, invalid_config).unwrap();
+
+        let err = ensure_codex_hcom_hooks_trusted().unwrap_err();
+        assert!(err.contains("failed to parse Codex config"));
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), invalid_config);
+    }
+
+    #[test]
+    #[serial]
+    fn test_try_setup_codex_hooks_errors_on_invalid_config_without_overwrite() {
+        let (_tmp, _hcom_dir, _home, _guard) = isolated_test_env();
+        unsafe { std::env::set_var("HCOM_TEST_CODEX_CLI_VERSION", "codex-cli 0.131.0") };
+
+        let config_path = get_codex_config_path();
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        let invalid_config = "hooks = [";
+        std::fs::write(&config_path, invalid_config).unwrap();
+
+        let err = try_setup_codex_hooks(false).unwrap_err();
+        match err {
+            SetupError::EnsureFeatureFailed { reason, .. } => {
+                assert!(reason.contains("failed to parse Codex config"));
+            }
+            _ => panic!("expected EnsureFeatureFailed for invalid config"),
+        }
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), invalid_config);
     }
 
     #[test]

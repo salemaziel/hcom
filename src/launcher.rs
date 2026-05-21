@@ -364,18 +364,28 @@ fn ensure_hooks_installed(tool: &LaunchTool) -> Result<()> {
                 return Ok(());
             }
             if let Err(e) = crate::hooks::codex::try_setup_codex_hooks(include_permissions) {
-                let diag = install_diag_context(
-                    tool,
-                    &[
-                        ("config_path", crate::hooks::codex::get_codex_config_path()),
-                        ("hooks_path", crate::hooks::codex::get_codex_hooks_path()),
-                    ],
-                );
-                bail!(
-                    "Failed to setup Codex hooks: {e}\n\
-                     Run: hcom hooks add codex\n\
-                     {diag}"
-                );
+                if matches!(e, crate::hooks::codex::SetupError::HookTrustFailed { .. }) {
+                    crate::log::log_warn(
+                        "codex",
+                        "codex.hook_trust_setup_warn",
+                        &format!(
+                            "Codex hook setup could not write trust state; launch preprocessing may fall back to hook-trust bypass: {e}"
+                        ),
+                    );
+                } else {
+                    let diag = install_diag_context(
+                        tool,
+                        &[
+                            ("config_path", crate::hooks::codex::get_codex_config_path()),
+                            ("hooks_path", crate::hooks::codex::get_codex_hooks_path()),
+                        ],
+                    );
+                    bail!(
+                        "Failed to setup Codex hooks: {e}\n\
+                         Run: hcom hooks add codex\n\
+                         {diag}"
+                    );
+                }
             }
             Ok(())
         }

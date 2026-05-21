@@ -7,6 +7,7 @@
 //! before spawning a new relay-worker process.
 
 use std::net::TcpListener;
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -24,15 +25,24 @@ fn pid_file_path() -> PathBuf {
     crate::paths::hcom_dir().join(".tmp").join("relay.pid")
 }
 
-fn write_pid_file() {
-    let pid = std::process::id().to_string();
-    crate::paths::atomic_write(&pid_file_path(), &pid);
+fn spawn_lock_path() -> PathBuf {
+    crate::paths::hcom_dir()
+        .join(".tmp")
+        .join("relay.spawn.lock")
+}
+
+fn write_pid_file_for(pid: u32) {
+    crate::paths::atomic_write(&pid_file_path(), &pid.to_string());
     // Seed heartbeat alongside the pidfile so readers in the startup window
     // (before the main loop starts ticking) don't see pid-alive + no-heartbeat
     // and falsely declare the worker dead.
     if let Ok(db) = HcomDb::open() {
         super::write_worker_heartbeat(&db);
     }
+}
+
+fn write_pid_file() {
+    write_pid_file_for(std::process::id());
 }
 
 fn read_pid_file() -> Option<u32> {
@@ -99,8 +109,11 @@ impl Drop for PidFileGuard {
 pub fn run() -> i32 {
     // Check if already running
     if let Some(existing_pid) = read_pid_file() {
-        eprintln!("relay-worker already running (PID {})", existing_pid);
-        return 1;
+        let current_pid = std::process::id();
+        if existing_pid != current_pid {
+            eprintln!("relay-worker already running (PID {})", existing_pid);
+            return 1;
+        }
     }
 
     // Write PID file (guard removes on exit)
@@ -300,6 +313,43 @@ fn local_instance_count(db: &HcomDb) -> i64 {
 /// Detaches via setsid() so the worker survives terminal close.
 /// Returns true if spawned successfully, false if already running or spawn failed.
 fn do_spawn() -> bool {
+    let lock_path = spawn_lock_path();
+    if let Some(parent) = lock_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::log_warn(
+                "relay",
+                "relay_worker.spawn_lock_mkdir_err",
+                &format!("{e}"),
+            );
+            return false;
+        }
+    }
+
+    let lock_file = match std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+    {
+        Ok(file) => file,
+        Err(e) => {
+            log::log_warn("relay", "relay_worker.spawn_lock_open_err", &format!("{e}"));
+            return false;
+        }
+    };
+
+    loop {
+        let lock_ret = unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) };
+        if lock_ret == 0 {
+            break;
+        }
+        let err = std::io::Error::last_os_error();
+        if err.kind() != std::io::ErrorKind::Interrupted {
+            log::log_warn("relay", "relay_worker.spawn_lock_err", &format!("{err}"));
+            return false;
+        }
+    }
+
     if is_relay_worker_running() {
         return false;
     }
@@ -343,6 +393,7 @@ fn do_spawn() -> bool {
 
     match cmd.spawn() {
         Ok(child) => {
+            write_pid_file_for(child.id());
             log::log_info(
                 "relay",
                 "relay_worker.spawned",

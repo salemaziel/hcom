@@ -9,6 +9,8 @@ pub use crate::tools::args_common::SourceType;
 fn flag_aliases() -> HashMap<&'static str, &'static str> {
     let mut m = HashMap::new();
     m.insert("--model", "--model");
+    m.insert("-n", "--name");
+    m.insert("--name", "--name");
     m.insert("--allowedtools", "--allowedTools");
     m.insert("--allowed-tools", "--allowedTools");
     m.insert("--disallowedtools", "--disallowedTools");
@@ -38,29 +40,66 @@ const BOOLEAN_FLAGS: &[&str] = &[
     "--dangerously-skip-permissions",
     "--include-partial-messages",
     "--allow-dangerously-skip-permissions",
+    "--bare",
+    "--brief",
     "--replay-user-messages",
     "--mcp-debug",
     "--ide",
     "--strict-mcp-config",
     "--no-session-persistence",
+    "--include-hook-events",
     "--disable-slash-commands",
+    "--exclude-dynamic-system-prompt-sections",
     "--chrome",
     "--no-chrome",
     "--init",
     "--init-only",
     "--maintenance",
+    "--json",
     "-v",
     "--version",
     "-h",
     "--help",
+    "--force",
+    "--claudeai",
+    "--console",
+    "--sso",
+    "--text",
+    "--client-secret",
+    "-a",
+    "--all",
+    "--available",
+    "--dry-run",
+    "-f",
+    "--push",
+    "--keep-data",
+    "--prune",
+    "-y",
+    "--yes",
+    "-i",
+    "--interactive",
 ];
 
 /// Flags with optional values (--resume, --debug, etc.).
-const OPTIONAL_VALUE_FLAGS: &[&str] =
-    &["--resume", "-r", "--debug", "-d", "--teleport", "--from-pr"];
+const OPTIONAL_VALUE_FLAGS: &[&str] = &[
+    "--resume",
+    "-r",
+    "--debug",
+    "-d",
+    "--teleport",
+    "--from-pr",
+    "-w",
+    "--worktree",
+    "--tmux",
+    "--remote-control",
+];
 
 /// Alias groups for optional value flags.
-const OPTIONAL_ALIAS_GROUPS: &[&[&str]] = &[&["--resume", "-r"], &["--debug", "-d"]];
+const OPTIONAL_ALIAS_GROUPS: &[&[&str]] = &[
+    &["--resume", "-r"],
+    &["--debug", "-d"],
+    &["--worktree", "-w"],
+];
 
 /// Value flags (require following value).
 const VALUE_FLAGS: &[&str] = &[
@@ -75,6 +114,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--debug-file",
     "--disallowedtools",
     "--disallowed-tools",
+    "--effort",
     "--fallback-model",
     "--file",
     "--input-format",
@@ -83,19 +123,41 @@ const VALUE_FLAGS: &[&str] = &[
     "--max-turns",
     "--mcp-config",
     "--model",
+    "-n",
+    "--name",
     "--output-format",
     "--permission-mode",
     "--permission-prompt-tool",
     "--plugin-dir",
+    "--plugin-url",
     "--remote",
+    "--remote-control-session-name-prefix",
     "--session-id",
     "--setting-sources",
     "--settings",
     "--system-prompt",
     "--system-prompt-file",
     "--teammate-mode",
+    "--timeout",
     "--tools",
+    "--cwd",
+    "--email",
+    "--callback-port",
+    "--client-id",
+    "-e",
+    "--env",
+    "--header",
+    "-s",
+    "--scope",
+    "-t",
+    "--transport",
+    "-m",
+    "--message",
 ];
+
+/// Case-sensitive value flags. Claude uses `-H` for `--header`; lowercasing it
+/// would collide with `-h` help.
+const CASE_SENSITIVE_VALUE_FLAGS: &[&str] = &["-H"];
 
 /// Normalized representation of Claude CLI arguments.
 #[derive(Debug, Clone)]
@@ -113,7 +175,36 @@ pub struct ClaudeArgsSpec {
 
 impl ClaudeArgsSpec {
     pub fn has_flag(&self, names: &[&str], prefixes: &[&str]) -> bool {
-        crate::tools::args_common::has_flag_in_tokens(&self.clean_tokens, names, prefixes)
+        let name_set: HashSet<String> = names.iter().map(|n| n.to_lowercase()).collect();
+        let exact_name_set: HashSet<&str> = names.iter().copied().collect();
+        let prefix_list: Vec<String> = prefixes.iter().map(|p| p.to_lowercase()).collect();
+        let exact_prefix_list: Vec<&str> = prefixes.to_vec();
+        let dash_idx = self
+            .clean_tokens
+            .iter()
+            .position(|t| t == "--")
+            .unwrap_or(self.clean_tokens.len());
+
+        for token in &self.clean_tokens[..dash_idx] {
+            if CASE_SENSITIVE_VALUE_FLAGS.contains(&token.as_str()) {
+                if exact_name_set.contains(token.as_str())
+                    || exact_prefix_list.iter().any(|p| token.starts_with(*p))
+                {
+                    return true;
+                }
+                continue;
+            }
+
+            let lower = token.to_lowercase();
+            if name_set.contains(&lower) {
+                return true;
+            }
+            if prefix_list.iter().any(|p| lower.starts_with(p.as_str())) {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn has_errors(&self) -> bool {
@@ -412,12 +503,18 @@ fn parse_tokens_with_errors(
     let bool_set: HashSet<&str> = BOOLEAN_FLAGS.iter().copied().collect();
     let opt_val_set: HashSet<&str> = OPTIONAL_VALUE_FLAGS.iter().copied().collect();
     let val_set: HashSet<&str> = VALUE_FLAGS.iter().copied().collect();
+    let case_sensitive_val_set: HashSet<&str> =
+        CASE_SENSITIVE_VALUE_FLAGS.iter().copied().collect();
 
     let opt_val_prefixes: Vec<String> = OPTIONAL_VALUE_FLAGS
         .iter()
         .map(|f| format!("{}=", f))
         .collect();
     let val_prefixes: Vec<String> = VALUE_FLAGS.iter().map(|f| format!("{}=", f)).collect();
+    let case_sensitive_val_prefixes: Vec<String> = CASE_SENSITIVE_VALUE_FLAGS
+        .iter()
+        .map(|f| format!("{}=", f))
+        .collect();
 
     let raw_tokens: Vec<String> = tokens.iter().map(|t| t.as_ref().to_string()).collect();
 
@@ -499,6 +596,22 @@ fn parse_tokens_with_errors(
         if token_lower == "--" {
             clean.push(token.clone());
             after_double_dash = true;
+            i += 1;
+            continue;
+        }
+
+        if case_sensitive_val_prefixes
+            .iter()
+            .any(|p| token.starts_with(p))
+        {
+            clean.push(token.clone());
+            i += 1;
+            continue;
+        }
+
+        if case_sensitive_val_set.contains(token.as_str()) {
+            pending_generic_flag = Some(token.clone());
+            clean.push(token.clone());
             i += 1;
             continue;
         }
@@ -667,6 +780,9 @@ fn get_flag_lookup() -> &'static FlagLookup {
         for f in VALUE_FLAGS {
             exact.insert(f.to_string());
         }
+        for f in CASE_SENSITIVE_VALUE_FLAGS {
+            exact.insert(f.to_string());
+        }
         for f in OPTIONAL_VALUE_FLAGS {
             exact.insert(f.to_string());
         }
@@ -680,6 +796,9 @@ fn get_flag_lookup() -> &'static FlagLookup {
             prefixes.push(format!("{}=", f));
         }
         for f in VALUE_FLAGS {
+            prefixes.push(format!("{}=", f));
+        }
+        for f in CASE_SENSITIVE_VALUE_FLAGS {
             prefixes.push(format!("{}=", f));
         }
         for (prefix, _) in canonical_prefixes() {
@@ -800,6 +919,9 @@ fn build_known_flags() -> Vec<String> {
     for f in VALUE_FLAGS {
         flags.insert(f.to_string());
     }
+    for f in CASE_SENSITIVE_VALUE_FLAGS {
+        flags.insert(f.to_string());
+    }
     for (k, v) in flag_aliases() {
         flags.insert(k.to_string());
         flags.insert(v.to_string());
@@ -854,6 +976,68 @@ mod tests {
         let args: Vec<String> = vec!["--fork-session".into()];
         let spec = parse_tokens(&args, SourceType::Cli);
         assert!(spec.is_fork);
+    }
+
+    #[test]
+    fn test_parse_new_current_value_flags_not_positionals() {
+        let args = [
+            "--bare",
+            "--brief",
+            "--effort",
+            "high",
+            "--plugin-url=https://example.invalid/plugin.zip",
+            "--remote-control",
+            "reviewer",
+            "--remote-control-session-name-prefix",
+            "host",
+            "-w",
+            "branch-name",
+            "--tmux=classic",
+            "-n",
+            "demo",
+        ];
+        let spec = parse_tokens(&args, SourceType::Cli);
+
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.positional_tokens.is_empty());
+        assert!(spec.has_flag(&["--bare"], &[]));
+        assert!(spec.has_flag(&["--brief"], &[]));
+        assert_eq!(spec.get_flag_value("--effort"), Some("high".to_string()));
+        assert_eq!(
+            spec.get_flag_value("--plugin-url"),
+            Some("https://example.invalid/plugin.zip".to_string())
+        );
+        assert_eq!(
+            spec.get_flag_value("--remote-control"),
+            Some("reviewer".to_string())
+        );
+        assert_eq!(
+            spec.get_flag_value("--worktree"),
+            Some("branch-name".to_string())
+        );
+        assert_eq!(spec.get_flag_value("--tmux"), Some("classic".to_string()));
+        assert_eq!(spec.get_flag_value("--name"), Some("demo".to_string()));
+    }
+
+    #[test]
+    fn test_parse_uppercase_header_flag_is_not_help() {
+        let spec = parse_tokens(&["mcp", "add", "-H", "X-Api-Key: secret"], SourceType::Cli);
+
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(!spec.has_flag(&["-h"], &[]));
+        assert_eq!(
+            spec.get_flag_value("-H"),
+            Some("X-Api-Key: secret".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_worktree_optional_value_without_value() {
+        let spec = parse_tokens(&["--worktree", "--verbose"], SourceType::Cli);
+
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.has_flag(&["--worktree"], &[]));
+        assert!(spec.has_flag(&["--verbose"], &[]));
     }
 
     #[test]

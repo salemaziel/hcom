@@ -367,7 +367,7 @@ Custom scripts: drop `*.sh` or `*.py` into `~/.hcom/scripts/` — auto-discovere
 ### Building from Source
 
 ```bash
-# Prerequisites: Rust 1.86+
+# Prerequisites: Rust 1.88+
 
 git clone https://github.com/salemaziel/hcom.git
 cd hcom

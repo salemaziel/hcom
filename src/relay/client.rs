@@ -1,8 +1,8 @@
 //! MQTT client lifecycle — connect, subscribe, LWT, reconnect with backoff.
 //!
-//! Uses rumqttc v5 blocking Connection iterator in a dedicated thread.
-//! Manual exponential backoff on connection errors (rumqttc auto-reconnects
-//! with zero delay; we add sleep between retries).
+//! Uses rumqttc v5 blocking Connection polling in a dedicated thread.
+//! Manual exponential backoff on connection errors pauses that polling thread
+//! so reconnect attempts do not hammer public brokers.
 
 use rumqttc::TlsConfiguration;
 use rumqttc::v5::mqttbytes::QoS;
@@ -111,10 +111,10 @@ pub struct MqttRelay {
 impl MqttRelay {
     const INBOUND_PUSH_DEBOUNCE: Duration = Duration::from_millis(150);
 
-    /// If no MQTT event (success or error) arrives from the connection thread
-    /// within this duration, the connection is presumed dead and the worker
-    /// exits. Set to 2x the MQTT keepalive (30s) to allow for normal idle
-    /// periods where only PingResp events flow.
+    /// If no MQTT event (success or error) arrives within this duration, the
+    /// connection is presumed dead and the worker exits. Set to 2x the MQTT
+    /// keepalive (30s) to allow for normal idle periods where only PingResp
+    /// events flow.
     const LIVENESS_TIMEOUT: Duration = Duration::from_secs(90);
 
     /// Create and connect the MQTT relay client.
@@ -205,19 +205,33 @@ impl MqttRelay {
 
     /// Run the main relay event loop. Blocks until shutdown.
     ///
-    /// Spawns a thread for the Connection iterator (which drives network I/O)
-    /// and processes events + commands in the main thread with timeout-based polling.
+    /// Spawns a throttled thread for the Connection polling and interleaves
+    /// MQTT events with commands in the main worker loop.
     /// Uses manual exponential backoff on connection errors.
     pub fn run(self, connection: Connection) {
-        // Forward MQTT events from connection thread to main thread via channel.
-        // Connection::iter() blocks, so it must run in a dedicated thread.
+        // Forward MQTT events from the blocking connection poller to the main
+        // loop. Sleeping in this thread after errors throttles rumqttc reconnects
+        // while the main worker loop stays responsive and keeps heartbeating.
         let (event_tx, event_rx) = mpsc::channel();
 
         thread::spawn(move || {
             let mut connection = connection;
-            for notification in connection.iter() {
-                if event_tx.send(notification).is_err() {
-                    break; // Main thread dropped receiver
+            let mut conn_backoff = Backoff::new();
+            loop {
+                match connection.recv() {
+                    Ok(notification) => {
+                        let is_error = notification.is_err();
+                        if event_tx.send(notification).is_err() {
+                            break;
+                        }
+                        if is_error {
+                            thread::sleep(conn_backoff.wait_duration());
+                            conn_backoff.increase();
+                        } else {
+                            conn_backoff.reset();
+                        }
+                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -292,9 +306,9 @@ impl MqttRelay {
             }
 
             // During backoff, skip event processing and just sleep.
-            // Reset liveness timer so backoff periods don't trigger false alarms
-            // — the connection thread may be queuing errors that we'll drain after
-            // backoff expires.
+            // Reset liveness timer so intentional backoff periods don't trigger
+            // false alarms — the connection thread may be queuing errors that
+            // we'll drain after backoff expires.
             if Instant::now() < backoff_until {
                 last_event_from_conn = Instant::now();
                 thread::sleep(Duration::from_millis(100));
@@ -379,19 +393,16 @@ impl MqttRelay {
                     }
                 }
             }
-            let drain_hit_cap = drain_count >= MAX_DRAIN_PER_TICK;
-
             if channel_disconnected {
                 log::log_info("relay", "relay.shutdown", "connection thread ended");
                 self.shutdown_graceful(&event_rx);
                 return;
             }
 
-            // Apply backoff only when we drained to Empty and the latest
-            // state is still an error. If we stopped because we hit the cap,
-            // skip backoff — loop back to check cmd_rx/timers, then continue
-            // draining the backlog on the next tick.
-            if drained && consecutive_errors > 0 && !drain_hit_cap {
+            // Apply backoff whenever the latest observed state is an error.
+            // The connection thread also throttles actual reconnect polling;
+            // this sleep prevents the main loop from hot-draining error bursts.
+            if drained && consecutive_errors > 0 {
                 backoff_until = Instant::now() + backoff.wait_duration();
                 backoff.increase();
             }
@@ -452,7 +463,7 @@ impl MqttRelay {
         }
     }
 
-    /// Handle a single MQTT event from the Connection iterator.
+    /// Handle a single MQTT event.
     fn handle_event(&self, event: Event, connected: &mut bool) -> bool {
         match event {
             Event::Incoming(incoming) => match incoming {

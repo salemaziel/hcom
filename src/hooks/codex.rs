@@ -2077,6 +2077,23 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_ensure_codex_hcom_hooks_trusted_errors_on_invalid_config_without_overwrite() {
+        let (_tmp, _hcom_dir, _home, _guard) = isolated_test_env();
+        unsafe { std::env::set_var("HCOM_TEST_CODEX_CLI_VERSION", "codex-cli 0.131.0") };
+
+        assert!(setup_codex_hooks(false));
+
+        let config_path = get_codex_config_path();
+        let malformed = "hooks = [\n";
+        std::fs::write(&config_path, malformed).unwrap();
+
+        let err = ensure_codex_hcom_hooks_trusted().unwrap_err();
+        assert!(err.contains("failed to parse Codex config"));
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), malformed);
+    }
+
+    #[test]
+    #[serial]
     fn test_setup_codex_hooks_repairs_disabled_hcom_hook_state() {
         let (_tmp, _hcom_dir, _home, _guard) = isolated_test_env();
         unsafe { std::env::set_var("HCOM_TEST_CODEX_CLI_VERSION", "codex-cli 0.131.0") };

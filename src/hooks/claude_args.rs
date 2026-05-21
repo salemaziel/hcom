@@ -175,10 +175,6 @@ pub struct ClaudeArgsSpec {
 
 impl ClaudeArgsSpec {
     pub fn has_flag(&self, names: &[&str], prefixes: &[&str]) -> bool {
-        let name_set: HashSet<String> = names.iter().map(|n| n.to_lowercase()).collect();
-        let exact_name_set: HashSet<&str> = names.iter().copied().collect();
-        let prefix_list: Vec<String> = prefixes.iter().map(|p| p.to_lowercase()).collect();
-        let exact_prefix_list: Vec<&str> = prefixes.to_vec();
         let dash_idx = self
             .clean_tokens
             .iter()
@@ -186,20 +182,23 @@ impl ClaudeArgsSpec {
             .unwrap_or(self.clean_tokens.len());
 
         for token in &self.clean_tokens[..dash_idx] {
-            if CASE_SENSITIVE_VALUE_FLAGS.contains(&token.as_str()) {
-                if exact_name_set.contains(token.as_str())
-                    || exact_prefix_list.iter().any(|p| token.starts_with(*p))
+            if CASE_SENSITIVE_VALUE_FLAGS.iter().any(|cs| token.starts_with(cs)) {
+                if names.contains(&token.as_str())
+                    || prefixes.iter().any(|p| token.starts_with(p))
                 {
                     return true;
                 }
                 continue;
             }
 
-            let lower = token.to_lowercase();
-            if name_set.contains(&lower) {
+            if names.iter().any(|&n| n.eq_ignore_ascii_case(token)) {
                 return true;
             }
-            if prefix_list.iter().any(|p| lower.starts_with(p.as_str())) {
+            if prefixes.iter().any(|&p| {
+                token
+                    .get(..p.len())
+                    .is_some_and(|t| t.eq_ignore_ascii_case(p))
+            }) {
                 return true;
             }
         }
@@ -1032,6 +1031,14 @@ mod tests {
     }
 
     #[test]
+    fn test_has_flag_matches_case_sensitive_header_equals_form() {
+        let spec = parse_tokens(&["mcp", "add", "-H=X-Api-Key: secret"], SourceType::Cli);
+
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.has_flag(&["-H"], &["-H="]));
+    }
+
+    #[test]
     fn test_parse_worktree_optional_value_without_value() {
         let spec = parse_tokens(&["--worktree", "--verbose"], SourceType::Cli);
 
@@ -1313,5 +1320,11 @@ mod tests {
         assert!(spec.has_flag(&["--verbose"], &[]));
         // --model is after --, should not be found as a flag
         assert!(!spec.has_flag(&["--model"], &[]));
+    }
+
+    #[test]
+    fn test_has_flag_case_sensitive_value_prefix() {
+        let spec = parse_tokens(&["-H=X: y"], SourceType::Cli);
+        assert!(spec.has_flag(&["-H"], &["-H="]));
     }
 }

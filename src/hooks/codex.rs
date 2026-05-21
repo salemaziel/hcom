@@ -1153,10 +1153,8 @@ fn write_hcom_hook_trust_state(
     definition_hashes: &HashMap<String, String>,
 ) -> Result<(), String> {
     let mut doc: DocumentMut = if config_path.exists() {
-        std::fs::read_to_string(config_path)
-            .map_err(|e| e.to_string())?
-            .parse::<DocumentMut>()
-            .unwrap_or_default()
+        let content = std::fs::read_to_string(config_path).map_err(|e| e.to_string())?;
+        content.parse::<DocumentMut>().map_err(|e| format!("failed to parse Codex config: {e}"))?
     } else {
         DocumentMut::new()
     };

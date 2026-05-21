@@ -1313,4 +1313,10 @@ mod tests {
         // --model is after --, should not be found as a flag
         assert!(!spec.has_flag(&["--model"], &[]));
     }
+
+    #[test]
+    fn test_has_flag_case_sensitive_value_prefix() {
+        let spec = parse_tokens(&["-H=X: y"], SourceType::Cli);
+        assert!(spec.has_flag(&["-H"], &["-H="]));
+    }
 }

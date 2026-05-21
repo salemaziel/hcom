@@ -195,7 +195,9 @@ impl ClaudeArgsSpec {
                 return true;
             }
             if prefixes.iter().any(|&p| {
-                token.len() >= p.len() && token[..p.len()].eq_ignore_ascii_case(p)
+                token
+                    .get(..p.len())
+                    .is_some_and(|t| t.eq_ignore_ascii_case(p))
             }) {
                 return true;
             }

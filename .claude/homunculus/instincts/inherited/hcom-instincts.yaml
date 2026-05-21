@@ -1,0 +1,492 @@
+# Instincts generated from https://github.com/salemaziel/hcom
+# Generated: 2026-05-21T00:07:26.670Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: hcom-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Commit Length
+
+## Action
+
+Keep commit messages concise (~49 characters)
+
+## Evidence
+
+- Average commit message length: 49 chars
+- Based on 10 commits
+
+---
+id: hcom-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: hcom-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: hcom-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: hcom-arch-type-based
+trigger: "when adding new code"
+confidence: 0.8
+domain: architecture
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Arch Type Based
+
+## Action
+
+Place code in the appropriate type folder (components/, services/, utils/, etc.)
+
+## Evidence
+
+- Type-based module organization detected
+- Folders: commands, hooks, relay, tools, db
+
+---
+id: hcom-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: hcom-workflow-codex-hook-trust-update
+trigger: "when doing codex hook trust update"
+confidence: 0.65
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Workflow Codex Hook Trust Update
+
+## Action
+
+Follow the codex-hook-trust-update workflow:
+1. Edit src/hooks/codex.rs to update trust logic or state handling.
+2. Edit src/tools/codex_preprocessing.rs and/or src/tools/codex_args.rs to adjust preprocessing or argument handling for Codex hooks.
+3. Optionally update src/commands/hooks.rs or related command files to align CLI behavior.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~3x per month
+- Files: src/hooks/codex.rs, src/tools/codex_preprocessing.rs, src/tools/codex_args.rs
+
+---
+id: hcom-workflow-relay-feature-fix-or-update
+trigger: "when doing relay feature fix or update"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Workflow Relay Feature Fix Or Update
+
+## Action
+
+Follow the relay-feature-fix-or-update workflow:
+1. Edit src/relay/client.rs and/or src/relay/worker.rs to fix or enhance relay logic.
+2. Edit src/commands/relay.rs or related files for command-level changes.
+3. Edit src/terminal.rs or tests/test_pty_delivery.rs for terminal/PTY integration or test coverage.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: src/relay/client.rs, src/relay/worker.rs, src/commands/relay.rs
+
+---
+id: hcom-workflow-dependency-version-bump
+trigger: "when doing dependency version bump"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/salemaziel/hcom
+---
+
+# Hcom Workflow Dependency Version Bump
+
+## Action
+
+Follow the dependency-version-bump workflow:
+1. Update Cargo.toml and Cargo.lock for Rust dependencies.
+2. Update pyproject.toml for Python dependencies.
+3. Optionally update README.md.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: Cargo.toml, Cargo.lock, pyproject.toml
+
+---
+id: hcom-instinct-file-naming-camelCase
+trigger: "When creating or renaming source files"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct File Naming CamelCase
+
+## Action
+
+Name files using camelCase convention
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.files
+- Consistent file naming in src/
+
+---
+id: hcom-instinct-function-naming-camelCase
+trigger: "When defining or renaming functions"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Function Naming CamelCase
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions
+- Consistent function naming in src/
+
+---
+id: hcom-instinct-class-naming-PascalCase
+trigger: "When defining or renaming classes/structs"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Class Naming PascalCase
+
+## Action
+
+Use PascalCase for class or struct names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes
+
+---
+id: hcom-instinct-constant-naming-SCREAMING_SNAKE_CASE
+trigger: "When defining constants"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Constant Naming SCREAMING_SNAKE_CASE
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants
+
+---
+id: hcom-instinct-import-relative
+trigger: "When importing modules within the project"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Import Relative
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+
+---
+id: hcom-instinct-export-named
+trigger: "When exporting functions or modules"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Export Named
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+
+---
+id: hcom-instinct-test-location-separate
+trigger: "When adding new tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Test Location Separate
+
+## Action
+
+Place tests in the separate tests/ directory, not alongside source files
+
+## Evidence
+
+- Pattern in architecture.testLocation
+- Presence of tests/ folder
+
+---
+id: hcom-instinct-test-file-naming
+trigger: "When naming test files"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Test File Naming
+
+## Action
+
+Name test files as test_<feature>.rs
+
+## Evidence
+
+- tests/test_pty_delivery.rs
+- Pattern in tests/ directory
+
+---
+id: hcom-instinct-test-pty-coverage
+trigger: "When modifying PTY or terminal-related code"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Test Pty Coverage
+
+## Action
+
+Update or add tests in tests/test_pty_delivery.rs
+
+## Evidence
+
+- Edits to tests/test_pty_delivery.rs in relay-feature-fix-or-update workflow
+
+---
+id: hcom-instinct-commit-prefix-fix
+trigger: "When committing a bugfix"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Commit Prefix Fix
+
+## Action
+
+Prefix commit message with 'fix' or 'Fix'
+
+## Evidence
+
+- Commits: fix(codex): ..., Fix relay status and PTY test robustness
+
+---
+id: hcom-instinct-commit-prefix-release
+trigger: "When committing a release or version bump"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Commit Prefix Release
+
+## Action
+
+Prefix commit message with 'release:'
+
+## Evidence
+
+- Commits: release: bump version to 0.7.17
+
+---
+id: hcom-instinct-commit-average-length
+trigger: "When writing commit messages"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Commit Average Length
+
+## Action
+
+Keep commit messages concise (~49 characters on average)
+
+## Evidence
+
+- commits.averageLength = 49
+
+---
+id: hcom-instinct-codex-hook-trust-update
+trigger: "When Codex hook trust logic needs to be changed, fixed, or made more robust"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Codex Hook Trust Update
+
+## Action
+
+Edit src/hooks/codex.rs (and related preprocessing/args/commands files) to update trust logic, persist state, or reject deprecated keys
+
+## Evidence
+
+- Workflow: codex-hook-trust-update
+- Commits: fix(codex): reject mixed deprecated codex_hooks key, scrub from all profiles
+- fix(codex): persist hcom hook trust state instead of bypassing trust
+
+---
+id: hcom-instinct-relay-feature-fix-or-update
+trigger: "When relay client/worker logic or related terminal/PTTY delivery needs fixing or improvement"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Relay Feature Fix Or Update
+
+## Action
+
+Edit src/relay/client.rs and/or src/relay/worker.rs, and update related command, terminal, or test files as needed
+
+## Evidence
+
+- Workflow: relay-feature-fix-or-update
+- Commits: Fix relay status and PTY test robustness
+- Fix relay worker spawn and reconnect backoff
+
+---
+id: hcom-instinct-dependency-version-bump
+trigger: "When releasing a new version or updating dependency baselines"
+confidence: 0.85
+domain: workflow
+source: repo-analysis
+source_repo: salemaziel/hcom
+---
+
+# Hcom Instinct Dependency Version Bump
+
+## Action
+
+Update Cargo.toml, Cargo.lock, pyproject.toml, and optionally README.md
+
+## Evidence
+
+- Workflow: dependency-version-bump
+- Commits: release: bump version to 0.7.17
+

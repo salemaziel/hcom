@@ -1031,6 +1031,14 @@ mod tests {
     }
 
     #[test]
+    fn test_has_flag_matches_case_sensitive_header_equals_form() {
+        let spec = parse_tokens(&["mcp", "add", "-H=X-Api-Key: secret"], SourceType::Cli);
+
+        assert!(!spec.has_errors(), "{:?}", spec.errors);
+        assert!(spec.has_flag(&["-H"], &["-H="]));
+    }
+
+    #[test]
     fn test_parse_worktree_optional_value_without_value() {
         let spec = parse_tokens(&["--worktree", "--verbose"], SourceType::Cli);
 
